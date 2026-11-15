@@ -7,7 +7,9 @@ import { PDFSemTextoError } from './erros.js';
 export async function extrairTexto(buffer) {
   let resultado;
   try {
-    resultado = await pdfParse(buffer);
+    // Cópia com ArrayBuffer próprio: o pdf.js do pdf-parse lê `buffer.buffer` ignorando o
+    // byteOffset, e Buffers pequenos (< 4 KB) do Node são fatias do pool compartilhado.
+    resultado = await pdfParse(new Uint8Array(buffer));
   } catch {
     throw new PDFSemTextoError('Não consegui ler esse PDF.');
   }
