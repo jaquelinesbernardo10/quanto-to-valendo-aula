@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Estado do repositório
 
-Projeto **greenfield**: a fonte única de verdade é `.llm/prd.md` (v7). Ele contém a spec completa, o dataset (Apêndice A), o schema Zod exato (Apêndice B) e o mapa de implementação por módulo (Apêndice C). A stack é fixa — não proponha alternativas. Em caso de dúvida, consulte o PRD antes de decidir.
+Implementado a partir de `.llm/prd.md` (v7), que continua sendo a fonte única de verdade. Ele contém a spec completa, o dataset (Apêndice A), o schema Zod exato (Apêndice B) e o mapa de implementação por módulo (Apêndice C). A stack é fixa — não proponha alternativas. Em caso de dúvida, consulte o PRD antes de decidir.
 
 **Idioma:** PT-BR em tudo — prompts, mensagens ao usuário, comentários, docstrings e **identificadores de código** (`analisarCurriculo`, `conversas`, `mensagens`).
 
@@ -14,7 +14,7 @@ Bot **inbound** de WhatsApp (Baileys): o usuário manda o CV (PDF ou texto ≥ 2
 
 ## Comandos
 
-Os scripts abaixo são os definidos no PRD §2.1 — enquanto o código não existir, eles ainda não funcionam. O `npm test` da raiz roda só o backend (o frontend não tem testes).
+O `npm test` da raiz roda só o backend (o frontend não tem testes; valide com `npm run build`). A suíte não usa rede nem API.
 
 ```bash
 # raiz
@@ -50,7 +50,14 @@ Backend ESM (`"type": "module"`) em `backend/src/`, organizado em camadas com **
 
 Fluxo inbound (`messageHandler`, PRD §4.3): ignorar `fromMe`/grupos/broadcast/status → persistir → checar agente ativo (global **E** por conversa) → rotear (PDF / doc não-PDF / texto < 200 / currículo) → "🔍 Analisando seu currículo..." → `analisarCurriculo` → enviar os 5 atos → persistir cada envio + `conversation_update`. Trava anti-concorrência por `(connectionId, remoteJid)`. Filtros (`deveIgnorarMensagem`, `classificarConteudo`) devem ser **funções puras**, testáveis sem rede.
 
-Agente (`core/agente.js`): loop **manual** de tool calling com `@anthropic-ai/sdk` (`consultar_faixa_salarial`), resposta final em JSON puro (fazer strip de code fence), validação Zod contra `AnaliseCompleta`, até 2 retries reenviando o erro. O client Anthropic deve ser **injetável** para o teste mockado.
+Agente (`core/agente.js`): loop **manual** de tool calling com `@anthropic-ai/sdk` (`consultar_faixa_salarial`), resposta final em JSON puro (fazer strip de code fence), validação Zod contra `AnaliseCompleta`, até 2 retries reenviando o erro. O client Anthropic é **injetável** (`opcoes.client`). Depois de validar, `reconciliarComTool()` recalcula `faixa_atual`, `faixa_proximo_nivel` e `delta_mensal` pela tool — os números finais nunca vêm do texto do modelo.
+
+## Testes e injeção de dependências
+
+- `criarMessageHandler({ repo, emitir, analisar, renderizar, extrair, baixarMidia, atraso })` e `criarServidor({ repo, adminToken, logger, criarConnectionManagerFn })` recebem tudo por parâmetro — é assim que os testes rodam sem Baileys nem API. `server.js` só faz boot quando executado diretamente.
+- `test/fixtures.js`: análises prontas (`analisePleno`, `analiseStaff`), `clientFalso` (fila de respostas da API) e helpers `respostaTool`/`respostaTexto`.
+- Banco em testes: `abrirBanco(':memory:')`.
+- A trava anti-concorrência é um `Set` no escopo da fábrica (não do módulo) e só é liberada por quem a reservou.
 
 ## Invariantes (PRD §3 — não violar)
 
@@ -69,6 +76,8 @@ Agente (`core/agente.js`): loop **manual** de tool calling com `@anthropic-ai/sd
 - **Baileys é CJS:** `makeWASocket` é import **default**; `useMultiFileAuthState`, `DisconnectReason`, `Browsers`, `downloadMediaMessage` são imports **nomeados**.
 - Reconexão: `loggedOut` limpa a sessão; outros motivos religam sem novo QR; desconexão manual **não** religa.
 - Números para o usuário em linguagem humana: nunca "percentil"; p25–p75 = "a maioria ganha entre X e Y", mediana = "o valor típico". Sem saudação genérica.
-- Erros nunca chegam crus ao usuário do WhatsApp (PDF sem texto, doc não-PDF, texto curto → orientação amigável).
+- Erros nunca chegam crus ao usuário do WhatsApp (PDF sem texto, doc não-PDF, texto curto → orientação amigável). Textos fixos do bot ficam em `TEXTOS` no `messageHandler.js`.
+- **pdf-parse:** importar `pdf-parse/lib/pdf-parse.js` (o index roda um self-test) e passar `new Uint8Array(buffer)` — o pdf.js lê `buffer.buffer` ignorando `byteOffset`, e Buffers < 4 KB do Node são fatias do pool compartilhado.
+- Modelos aceitos no painel: lista `MODELOS_VALIDOS` em `routes/settings.js`. Config do painel é lida **a cada análise** (vale sem restart).
 - **Fora do escopo:** disparos em massa, campanhas, agendamento, fila (BullMQ), RAG, gráficos, multi-tenant, deploy automatizado.
 - Painel: tema dark (`#25D366` sobre `#0d1117`/`#161b22`), rotas `/connections`, `/conversations`, `/settings`, login por token em memória.
