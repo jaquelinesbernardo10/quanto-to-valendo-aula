@@ -3,6 +3,7 @@ import {
   deveIgnorarMensagem,
   classificarConteudo,
   sortearAtraso,
+  ehPedidoDeAnalise,
   criarMessageHandler,
   TEXTOS,
 } from '../src/managers/messageHandler.js';
@@ -62,6 +63,20 @@ describe('classificarConteudo', () => {
       },
     };
     expect(classificarConteudo(msg)).toBe('pdf');
+  });
+});
+
+describe('ehPedidoDeAnalise', () => {
+  it('aceita "análise" com qualquer caixa, acento e pontuação nas pontas', () => {
+    for (const t of ['Analise', 'Análise', 'ANALISE', 'ANÁLISE', 'analise', '  análise!  ', 'Análise.']) {
+      expect(ehPedidoDeAnalise(t)).toBe(true);
+    }
+  });
+
+  it('recusa qualquer outro texto', () => {
+    for (const t of ['oi', 'analisar', 'quero uma análise', 'análise por favor', '', 'analises']) {
+      expect(ehPedidoDeAnalise(t)).toBe(false);
+    }
   });
 });
 
@@ -156,11 +171,20 @@ describe('criarMessageHandler', () => {
     expect(sock.enviadas.some((m) => m.text.includes('stack'))).toBe(false);
   });
 
-  it('texto curto e documento não-PDF recebem orientação sem chamar a API', async () => {
+  it('"análise" e documento não-PDF recebem orientação sem chamar a API', async () => {
     const sock = sockFalso();
-    await ctx.tratar({ connectionId: 'c1', sock, msg: msgTexto('oi') });
+    await ctx.tratar({ connectionId: 'c1', sock, msg: msgTexto('Análise') });
     await ctx.tratar({ connectionId: 'c1', sock, msg: msgDoc('application/msword', 'cv.doc') });
     expect(sock.enviadas.map((m) => m.text)).toEqual([TEXTOS.textoCurto, TEXTOS.documentoNaoPdf]);
+    expect(ctx.chamadasAnalise).toHaveLength(0);
+  });
+
+  it('outro texto curto não recebe resposta, mas fica salvo no histórico', async () => {
+    const sock = sockFalso();
+    const r = await ctx.tratar({ connectionId: 'c1', sock, msg: msgTexto('oi, tudo bem?') });
+    expect(r.acao).toBe('texto_curto_ignorado');
+    expect(sock.enviadas).toHaveLength(0);
+    expect(ctx.repo.listarConversas()[0]).toMatchObject({ total_mensagens: 1, ultima_mensagem: 'oi, tudo bem?' });
     expect(ctx.chamadasAnalise).toHaveLength(0);
   });
 
@@ -203,7 +227,7 @@ describe('criarMessageHandler', () => {
     liberar();
     expect((await primeira).acao).toBe('analisada');
     // depois de terminar, a trava foi liberada
-    const terceira = c.tratar({ connectionId: 'c1', sock, msg: msgTexto('oi') });
+    const terceira = c.tratar({ connectionId: 'c1', sock, msg: msgTexto('analise') });
     expect((await terceira).acao).toBe('texto_curto');
   });
 
@@ -213,7 +237,9 @@ describe('criarMessageHandler', () => {
     const sock = sockFalso();
     const analise = c.tratar({ connectionId: 'c1', sock, msg: msgTexto(CV_EXEMPLO) });
     await new Promise((r) => setTimeout(r, 0));
-    expect((await c.tratar({ connectionId: 'c1', sock, msg: msgTexto('oi') })).acao).toBe('ja_analisando');
+    expect((await c.tratar({ connectionId: 'c1', sock, msg: msgTexto('ANÁLISE') })).acao).toBe('ja_analisando');
+    // texto curto qualquer durante a análise continua em silêncio
+    expect((await c.tratar({ connectionId: 'c1', sock, msg: msgTexto('oi') })).acao).toBe('texto_curto_ignorado');
     expect((await c.tratar({ connectionId: 'c1', sock, msg: msgTexto(CV_EXEMPLO) })).acao).toBe(
       'ja_analisando',
     );

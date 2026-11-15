@@ -67,6 +67,19 @@ export function classificarConteudo(msg) {
   return textoDaMensagem(msg).length >= MIN_CARACTERES_CURRICULO ? 'curriculo' : 'texto_curto';
 }
 
+/**
+ * true se o texto é a palavra-gatilho "análise" (ignora maiúsculas, acentos,
+ * espaços e pontuação nas pontas): "Analise", "ANÁLISE", " analise! "…
+ */
+export function ehPedidoDeAnalise(texto) {
+  const normalizado = String(texto ?? '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/^[^a-z]+|[^a-z]+$/g, '');
+  return normalizado === 'analise';
+}
+
 /** Intervalo humano entre mensagens: 1,5–2,5s. */
 export function sortearAtraso(aleatorio = Math.random) {
   return 1500 + Math.floor(aleatorio() * 1000);
@@ -176,6 +189,13 @@ export function criarMessageHandler({
     const { agente_ativo_global: ativoGlobal } = repo.obterConfiguracoes();
     if (!ativoGlobal || !conversa.agente_ativo) return { acao: 'agente_desligado' };
 
+    const tipo = classificarConteudo(msg);
+    // Texto curto só recebe orientação se for a palavra-gatilho "análise"; o resto fica em silêncio
+    // (já foi persistido acima e aparece no painel).
+    if (tipo === 'texto_curto' && !ehPedidoDeAnalise(textoDaMensagem(msg))) {
+      return { acao: 'texto_curto_ignorado' };
+    }
+
     // Trava anti-concorrência: checagem e reserva são síncronas (antes de qualquer await).
     const chave = `${connectionId}:${remoteJid}`;
     if (emAnalise.has(chave)) {
@@ -183,7 +203,6 @@ export function criarMessageHandler({
       return { acao: 'ja_analisando' };
     }
 
-    const tipo = classificarConteudo(msg);
     const vaiAnalisar = tipo === 'pdf' || tipo === 'curriculo';
     if (vaiAnalisar) emAnalise.add(chave);
     try {
