@@ -54,7 +54,7 @@ Agente (`core/agente.js`): loop **manual** de tool calling com `@anthropic-ai/sd
 
 ## Testes e injeção de dependências
 
-- `criarMessageHandler({ repo, emitir, analisar, renderizar, extrair, baixarMidia, atraso })` e `criarServidor({ repo, adminToken, logger, criarConnectionManagerFn })` recebem tudo por parâmetro — é assim que os testes rodam sem Baileys nem API. `server.js` só faz boot quando executado diretamente.
+- `criarMessageHandler({ repo, emitir, analisar, renderizar, extrair, baixarMidia, atraso })` e `criarServidor({ repo, adminToken, logger, criarConnectionManagerFn })` recebem tudo por parâmetro — é assim que os testes rodam sem Baileys nem API. `app.js` só monta o servidor (sem efeitos no import); `server.js` é só o boot — não condicione o boot a `process.argv` (sob o pm2, `argv[1]` é o contêiner do pm2).
 - `test/fixtures.js`: análises prontas (`analisePleno`, `analiseStaff`), `clientFalso` (fila de respostas da API) e helpers `respostaTool`/`respostaTexto`.
 - Banco em testes: `abrirBanco(':memory:')`.
 - A trava anti-concorrência é um `Set` no escopo da fábrica (não do módulo) e só é liberada por quem a reservou.

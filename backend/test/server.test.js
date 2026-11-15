@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { io as clienteSocket } from 'socket.io-client';
 import pino from 'pino';
-import { criarServidor } from '../src/server.js';
+import { criarServidor } from '../src/app.js';
 import { abrirBanco } from '../src/db/database.js';
 import { criarRepositorio } from '../src/db/repositorio.js';
 
